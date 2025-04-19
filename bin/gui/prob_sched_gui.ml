@@ -1,177 +1,195 @@
-open Prob_sched (* biblioteca com os modulos criados *)
+(* Abrir a biblioteca principal, se houver uma *)
+open Prob_sched
 
 (* --- Módulos --- *)
-open Tk (* labltk pra fazer a janela *)
-open Process
+open Tk
+open Process     (* Assume float times, remaining_time, deadline, completion_time option *)
+open Scheduler   (* Assumir que as funções retornam { schedule; completed_processes } *)
+open Stats       (* Assumir que existe e funciona como definido *)
 
 (* --- Configuração Inicial --- *)
-
-let next_pid = ref 0 (* variavel global pra gerar pids unicos, começa em 0 *)
+let next_pid = ref 1 (* Começar PID em 1 *)
 let generate_pid () =
-  let pid = !next_pid in (* le o valor atual *)
-  next_pid := !next_pid + 1; (* incrementa para o proximo *)
-  pid (* retorna o pid gerado *)
+  let pid = !next_pid in
+  next_pid := !next_pid + 1;
+  pid
 
 (* --- Elementos da GUI --- *)
-
-let top = openTk () (* cria a janela principal *)
-let () = Wm.title_set top "Criador de Processo e Seletor de Algoritmo" (* titulo da janela *)
+let top = openTk ()
+let () = Wm.title_set top "Criador Processo & Simulador (Combinado)"
 
 (* Variáveis (OCaml refs) para armazenar dados e estado da GUI *)
-let chosen_algorithm_name = ref "Nenhum" (* nome do algo escolhido *)
-let display_process_details = ref "Nenhum processo criado ainda." (* texto pra mostrar detalhes do processo *)
-let display_chosen_algorithm = ref "Algoritmo: Nenhum selecionado" (* texto pra mostrar o algo *)
+let display_output = ref "Preencha os dados do processo (serão ignorados pela simulação fixa)\ne clique 'Criar Processo' para executar a simulação."
 
 (* --- Widgets da Interface --- *)
 
-(* Frame para Inputs do Processo *)
-let input_frame = Frame.create top ~borderwidth:2 ~relief:`Groove (* caixa pros inputs *)
-let () = pack [coe input_frame] ~pady:5 ~padx:5 ~fill:`X (* meter a caixa na janela *)
-
-(* Nome do Processo - Row 0 *)
-let name_label = Label.create input_frame ~text:"Nome do processo:" (* texto fixo *)
-let name_entry = Entry.create input_frame (* caixa de texto pra escrever o nome *)
-let () = grid [coe name_label] ~row:0 ~column:0 ~sticky:"w" ~padx:2 ~pady:2 (* arrumar na grelha *)
-let () = grid [coe name_entry] ~row:0 ~column:1 ~sticky:"we" ~padx:2 ~pady:2 (* caixa de texto ao lado *)
-
-(* Tempo de Chegada - Row 1 *)
-let arrival_label = Label.create input_frame ~text:"Tempo de chegada:"
+(* Frame para Inputs do Processo (como antes) *)
+let input_frame = Frame.create top ~borderwidth:2 ~relief:`Groove
+let () = pack [coe input_frame] ~pady:5 ~padx:5 ~fill:`X
+let name_label = Label.create input_frame ~text:"Nome:"
+let name_entry = Entry.create input_frame
+(* ... outros labels e entries para arrival, burst, priority ... *)
+let arrival_label = Label.create input_frame ~text:"Chegada (float):"
 let arrival_entry = Entry.create input_frame
+let burst_label = Label.create input_frame ~text:"Burst (float):"
+let burst_entry = Entry.create input_frame
+let priority_label = Label.create input_frame ~text:"Prioridade (1-5):"
+let priority_entry = Entry.create input_frame
+(* ... (grid layout como antes) ... *)
+let () = grid [coe name_label] ~row:0 ~column:0 ~sticky:"w" ~padx:2 ~pady:2
+let () = grid [coe name_entry] ~row:0 ~column:1 ~sticky:"we" ~padx:2 ~pady:2
 let () = grid [coe arrival_label] ~row:1 ~column:0 ~sticky:"w" ~padx:2 ~pady:2
 let () = grid [coe arrival_entry] ~row:1 ~column:1 ~sticky:"we" ~padx:2 ~pady:2
-
-(* Burst Time - Row 2 *)
-let burst_label = Label.create input_frame ~text:"Burst time (execução):"
-let burst_entry = Entry.create input_frame
 let () = grid [coe burst_label] ~row:2 ~column:0 ~sticky:"w" ~padx:2 ~pady:2
 let () = grid [coe burst_entry] ~row:2 ~column:1 ~sticky:"we" ~padx:2 ~pady:2
-
-(* Prioridade - Row 3 *)
-let priority_label = Label.create input_frame ~text:"Prioridade (menor=maior):"
-let priority_entry = Entry.create input_frame
 let () = grid [coe priority_label] ~row:3 ~column:0 ~sticky:"w" ~padx:2 ~pady:2
 let () = grid [coe priority_entry] ~row:3 ~column:1 ~sticky:"we" ~padx:2 ~pady:2
-
-(* Configura a coluna 1 para expandir *)
-(* isto faz com que as caixas de texto estiquem se a janela aumentar *)
 let () = Grid.column_configure input_frame 1 ~weight:1
 
-(* Frame para Exibir Detalhes do Processo Criado *)
-let display_frame = Frame.create top ~borderwidth:2 ~relief:`Groove (* outra caixa, pra mostrar o resultado*)
-let display_label = Label.create display_frame ~text:!display_process_details ~justify:`Left (* onde o texto aparece *)
-let () = pack [coe display_frame] ~pady:5 ~padx:5 ~fill:`X (* meter na janela *)
-let () = pack [coe display_label] ~padx:5 ~pady:5 ~anchor:`W (* texto alinhado à esquerda *)
 
-(* Frame para Seleção de Algoritmo *)
-let algo_frame = Frame.create top ~borderwidth:2 ~relief:`Groove (* caixa pro algoritmo *)
-let () = pack [coe algo_frame] ~pady:5 ~padx:5 ~fill:`X
+(* --- Frame de Simulação (Seleção de Algoritmo e Quantum) --- *)
+let sim_frame = Frame.create top ~borderwidth:2 ~relief:`Groove
+let () = pack [coe sim_frame] ~pady:5 ~padx:5 ~fill:`X
 
-(* Label para mostrar o algoritmo escolhido *)
-let chosen_algo_label = Label.create algo_frame ~text:!display_chosen_algorithm ~justify:`Left
-let () = pack [coe chosen_algo_label] ~side:`Bottom ~pady:5 ~padx:5 ~anchor:`W (* fica em baixo nesta frame *)
+(* Seleção de Algoritmo (Usando OptionMenu) *)
+let nomes_algoritmos = ["FCFS"; "SJF"; "Priority_NP"; "Priority_P"; "RR"; "RM"; "EDF"]
+let var_algoritmo_selecionado = Textvariable.create ()
+let valor_inicial = List.hd nomes_algoritmos
+let () = Textvariable.set var_algoritmo_selecionado valor_inicial
+let label_selecao_algoritmo = Label.create sim_frame ~text:"Algoritmo:"
+let menu_selecao_algoritmo, _ = Optionmenu.create ~parent:sim_frame ~variable:var_algoritmo_selecionado nomes_algoritmos
+let () = pack [coe label_selecao_algoritmo] ~side:`Left ~padx:5
+let () = pack [coe menu_selecao_algoritmo] ~side:`Left ~padx:5 ~fill:`X ~expand:true
 
-(* Menu Button para escolher o algoritmo *)
-let algo_menubutton = Menubutton.create algo_frame ~text:"Escolher Algoritmo" ~relief:`Raised (* o botao q abre o menu *)
-let algo_menu = Menu.create algo_menubutton (* o menu em si, ainda vazio *)
+(* Input para Quantum (necessário para RR) *)
+let quantum_label = Label.create sim_frame ~text:"Quantum (RR):"
+let quantum_entry = Entry.create sim_frame ~width:5
+let () = Entry.insert quantum_entry ~index:(`Num 0) ~text:"1.0" (* Default quantum *)
+let () = pack [coe quantum_label] ~side:`Left ~padx:5
+let () = pack [coe quantum_entry] ~side:`Left ~padx:5
 
-(* Função callback quando um algoritmo é selecionado *)
-(* isto corre quando escolhes uma opção no menu *)
-let set_algorithm algo_name =
-  chosen_algorithm_name := algo_name; (* guarda o nome *)
-  display_chosen_algorithm := "Algoritmo: " ^ algo_name; (* prepara o texto pra mostrar *)
-  Label.configure chosen_algo_label ~text:!display_chosen_algorithm; (* atualiza o label na janela *)
-  Printf.printf "Debug: Algoritmo '%s' selecionado.\n%!" algo_name (* mensagem pra consola *)
 
-(* Adiciona as opções de algoritmo ao menu *)
-let algorithms = ["FIFO"; "SJF"; "Prioridade"; "Round Robin"] (* lista de algos *)
-let () =
-  List.iter (fun algo -> (* para cada algo na lista... *)
-    Menu.add_command algo_menu ~label:algo ~command:(fun () -> set_algorithm algo) (* ...adiciona uma entrada no menu que chama set_algorithm *)
-  ) algorithms
-let () = Menubutton.configure algo_menubutton ~menu:algo_menu (* associa o menu ao botao *)
-let () = pack [coe algo_menubutton] ~pady:5 ~padx:5 ~anchor:`W (* mete o botao na frame *)
+(* --- Botão para Criar Processo (AGORA EXECUTA SIMULAÇÃO) --- *)
+let create_run_button = Button.create top ~text:"Criar Processo / Executar Simulação Fixa" (* Comando definido abaixo *)
+let () = pack [coe create_run_button] ~pady:10
 
-(* --- Botão para Criar o Processo --- *)
+(* --- Frame para Exibir Saída (Resultados da Simulação) --- *)
+let display_frame = Frame.create top ~borderwidth:2 ~relief:`Groove
+let display_label = Label.create display_frame ~text:!display_output ~justify:`Left ~anchor:`Nw
+let () = pack [coe display_frame] ~pady:5 ~padx:5 ~fill:`Both ~expand:true
 
-(* Função callback para o botão "Criar Processo" *)
-(* isto corre quando clicas no botao 'Criar Processo' *)
-let create_process_action () =
-  try (* tentar fazer isto tudo, pode dar erro *)
-    (* 1. Obter dados das caixas de texto *)
-    let name = Entry.get name_entry in
-    let arrival_str = Entry.get arrival_entry in
-    let burst_str = Entry.get burst_entry in
-    let priority_str = Entry.get priority_entry in
 
-    (* 2. Validar e Converter para numeros *)
-    if name = "" then raise (Failure "Nome do processo não pode estar vazio."); (* verifica nome *)
-    let arrival_time = try int_of_string arrival_str with Failure _ -> raise (Failure "Tempo de chegada inválido.") in (* converte chegada *)
-    let burst_time = try int_of_string burst_str with Failure _ -> raise (Failure "Burst time inválido.") in (* converte burst *)
-    let priority = try int_of_string priority_str with Failure _ -> raise (Failure "Prioridade inválida.") in (* converte prio *)
-    (* mais umas verificações *)
-    if arrival_time < 0 then raise (Failure "Tempo de chegada não pode ser negativo.");
-    if burst_time <= 0 then raise (Failure "Burst time deve ser positivo.");
-    if priority < 0 then raise (Failure "Prioridade não pode ser negativa.");
+(* --- Lógica do Botão (AGORA EXECUTA SIMULAÇÃO) --- *)
+let create_and_run_action () =
+  (* Mensagem de espera *)
+  display_output := "A executar simulação...";
+  Label.configure display_label ~text:!display_output;
+  update (); (* Força atualização da GUI *)
 
-    (* 3. Definir estado inicial e PID *)
-    (* Usa 'Ready' diretamente, pois 'open Process' expôs 'process_state' *)
-    (* !! Atenção !! A sintaxe aqui com 'and' está errada para lets separados *)
-    let state = Process.Ready (* aqui devia ser só Ready? *)
-    and completion_time = 0
-    and pid = generate_pid () in
+  try
+    (* !! VALIDAÇÃO DOS INPUTS (opcional, pois não serão usados na simulação fixa) !! *)
+    let _name = Entry.get name_entry in (* Lê mas ignora *)
+    let _arrival_str = Entry.get arrival_entry in
+    let _burst_str = Entry.get burst_entry in
+    let _priority_str = Entry.get priority_entry in
+    (* Poderia adicionar a validação aqui para dar feedback ao user, mesmo que não use os dados *)
+    (* Ex: if _name = "" then raise (Failure "Nome não pode ser vazio"); *)
 
-    (* 4. Criar o processo *)
-    (* Usa 'create_process' diretamente, pois 'open Process' expôs a função *)
-    (* A variável 'processo' terá o tipo Process.process implicitamente *)
-     (* aqui tb devia ser só create_process, nao? *)
-    let processo = Process.create_process pid name arrival_time burst_time priority state completion_time in
 
-    (* 5. Formatar detalhes para mostrar *)
-    let details = Printf.sprintf
-      "--- Processo Criado ---\nPID: %d\nNome: %s\nArrival: %d\nBurst: %d\nPriority: %d\nCompletion: %d\nState: %s"
-      processo.pid
-      processo.name
-      processo.arrival_time
-      processo.burst_time
-      processo.priority
-      processo.completion_time
-      (* Usa 'string_of_state' diretamente, pois 'open Process' expôs a função *)
-      (Process.string_of_state processo.state) (* e aqui tb so string_of_state *)
+    (* !! DEFINIR LISTA DE PROCESSOS FIXA PARA A SIMULAÇÃO !! *)
+    (* Certifique-se que create_process está correto em process.ml *)
+    let simulation_input_list : Process.process list = [
+      create_process 1 "P1" 0.0 5.0 2 Ready;
+      create_process 2 "P2" 1.0 3.0 1 Ready;
+      create_process 3 "P3" 2.0 8.0 3 Ready;
+      create_process 4 "P4" 3.0 6.0 2 Ready;
+      (* create_process 5 "P5_RT" 4.0 2.0 1 Ready (Some 10.0); *) (* Exemplo RT *)
+    ] in
+    (* IMPORTANTE: Resetar remaining_time e completion_time antes de cada simulação! *)
+    let current_processes = List.map (fun p ->
+      { p with remaining_time = p.burst_time; completion_time = None }
+    ) simulation_input_list in
+
+    (* Obter algoritmo selecionado *)
+    let nome_algo_escolhido = Textvariable.get var_algoritmo_selecionado in
+
+    (* Executar a simulação *)
+    let result : Scheduler.result =
+      match nome_algo_escolhido with
+      | "FCFS"        -> Scheduler.fcfs current_processes
+      (*| "SJF"         -> Scheduler.sjf current_processes
+      | "Priority_NP" -> Scheduler.priority_non_preemptive current_processes
+      | "Priority_P"  -> Scheduler.priority_preemptive current_processes
+      | "RR" ->
+          let q_str = Entry.get quantum_entry in
+          let quantum = try float_of_string q_str with Failure _ -> 1.0 in
+          let valid_quantum = if quantum <= 0. then (Printf.eprintf "Quantum inválido, usando 1.0\n"; 1.0) else quantum in
+          Scheduler.round_robin current_processes ~quantum:valid_quantum
+      | "RM"          -> Scheduler.rate_monotonic current_processes
+      | "EDF"         -> Scheduler.edf current_processes
+      *)
+      | s             -> failwith ("Algoritmo não implementado ou desconhecido: " ^ s)
     in
-    display_process_details := details; (* guardar o texto formatado *)
 
-    (* 6. Atualizar a Label na janela *)
-    Label.configure display_label ~text:!display_process_details;
+    (* Processar resultados e calcular estatísticas *)
+    let run_data_for_stats : Stats.process_run_data list =
+      List.map (fun (proc, comp_time) ->
+        { Stats.id = proc.pid;
+          Stats.arrival_time = proc.arrival_time;
+          Stats.burst_time = proc.burst_time; (* Original *)
+          Stats.completion_time = comp_time;
+          Stats.deadline = proc.deadline;
+        }
+      ) result.completed_processes
+    in
 
-    (* 7. limpar os campos de entrada - opcional mas util *)
-    (* Entry.delete name_entry ~first:0 ~last:`End;
-       Entry.delete arrival_entry ~first:0 ~last:`End;
-       Entry.delete burst_entry ~first:0 ~last:`End;
-       Entry.delete priority_entry ~first:0 ~last:`End;
-       Entry.icursor_set name_entry ~index:0; *)
+    (* Calcular tempos totais (simplificado) *)
+    let total_simulation_time =
+      match List.rev result.completed_processes with
+      | [] -> 0.0
+      | (_, last_completion_time) :: _ -> last_completion_time
+    in
+    let total_cpu_busy_time =
+      List.fold_left (fun acc (proc, _) -> acc +. proc.burst_time) 0.0 result.completed_processes
+    in
 
+    (* Calcular estatísticas finais *)
+    let final_stats = Stats.calculate_statistics
+      ~completed_processes:run_data_for_stats
+      ~total_simulation_time:total_simulation_time
+      ~total_cpu_busy_time:total_cpu_busy_time
+    in
+    let stats_output = Stats.format_results final_stats in
 
-    Printf.printf "Processo criado via GUI: PID %d Nome: %s\n%!" pid name (* msg pra consola *)
+    (* Formatar Schedule (simples) *)
+    let schedule_output =
+      "--- Schedule ---\n" ^
+      (String.concat "\n" (List.map (fun (t, pid) -> Printf.sprintf " %.1f: PID %d" t pid) result.schedule)) ^
+      "\n--- Fim Schedule ---"
+    in
+
+    (* Atualizar label de saída com OS RESULTADOS DA SIMULAÇÃO *)
+    display_output := "--- Simulação Concluída ---\n\n" ^ schedule_output ^ "\n\n" ^ stats_output;
+    Label.configure display_label ~text:!display_output
 
   with
-  | Failure msg -> (* se alguma coisa correu mal no 'try'... *)
-      let error_msg = Printf.sprintf "Erro: %s" msg in (* formata msg de erro *)
-      display_process_details := error_msg; (* guarda a msg de erro *)
-      Label.configure display_label ~text:!display_process_details; (* mostra o erro na janela *)
-      Printf.eprintf "Erro ao criar processo: %s\n%!" msg (* manda erro pra consola *)
-      (* Podia mostrar uma popup de erro, tipo isto: *)
-      (* Dialog.message top ~title:"Erro na Criação do Processo" ~message:msg ~icon:`Error ~typ:`Ok *)
+  | Failure msg ->
+      display_output := "Erro durante a simulação:\n" ^ msg;
+      Label.configure display_label ~text:!display_output;
+      Printf.eprintf "Erro: %s\n%!" msg
+  | e -> (* Captura outras excepções *)
+      display_output := "Erro inesperado na simulação:\n" ^ (Printexc.to_string e);
+      Label.configure display_label ~text:!display_output;
+      Printf.eprintf "Erro Inesperado: %s\n" (Printexc.to_string e)
 
-
-(* Cria o botão principal *)
-let create_button = Button.create top ~text:"Criar Processo" ~command:create_process_action (* associa a função ao clique *)
-let () = pack [coe create_button] ~pady:10 (* mete o botao na janela *)
+(* Associa a ação ao botão *)
+let () = Button.configure create_run_button ~command:create_and_run_action
 
 (* --- Loop Principal da GUI --- *)
 let () =
-  try (* tentar correr a janela *)
+  try
     print_endline "A iniciar a interface gráfica...";
-    mainLoop () (* !! isto é que faz a janela aparecer e funcionar !! *)
-  with e -> (* se até o mainLoop der erro... *)
-    Printf.eprintf "Erro fatal na aplicação GUI: %s\n" (Printexc.to_string e); (* mostra erro critico *)
-    exit 1 (* e fecha o programa *)
+    mainLoop ()
+  with e ->
+    Printf.eprintf "Erro fatal na aplicação GUI: %s\n" (Printexc.to_string e);
+    exit 1
