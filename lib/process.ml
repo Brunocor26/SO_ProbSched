@@ -18,4 +18,14 @@ module Process = struct
 
   let create_process pid name arrival_time burst_time priority state completion_time =
     { pid; name; arrival_time; burst_time; priority; state; completion_time }
+
+   (* === ADICIONAR ESTA FUNÇÃO === *)
+   let string_of_state (s : process_state) : string =
+    match s with
+    | Ready -> "Ready"
+    | Running -> "Running"
+    | Waiting -> "Waiting"
+    | Terminated -> "Terminated"
+  (* === FIM DA FUNÇÃO ADICIONADA === *)
+  
 end

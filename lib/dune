@@ -1,4 +1,4 @@
 (library
  (name prob_sched)
- (modules process generator scheduler stats)
+ (modules algorithms distributions process generator stats help)
 )

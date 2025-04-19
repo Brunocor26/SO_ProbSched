@@ -1,0 +1,3 @@
+(executable
+ (name prob_sched_gui)
+ (libraries prob_sched labltk))
