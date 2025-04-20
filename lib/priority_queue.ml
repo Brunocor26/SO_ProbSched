@@ -1,4 +1,4 @@
-(* priority_queue.ml *)
+
 
 (* Implementação baseada em lista ordenada por prioridade. *)
 
@@ -43,3 +43,4 @@ let peek pq =
 
 (* devolve o número de elementos na fila *)
 let size pq = List.length pq.items
+

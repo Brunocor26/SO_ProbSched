@@ -5,11 +5,12 @@
 let escolha_algoritmo n =
   match n with
   |1-> "fcfs"
-  |2-> "sj"
-  |3-> "priority"
-  |4-> "rr"
-  |5-> "rm"
-  |6-> "edf"
+  |2-> "sjf"
+  |3-> "priority_np"
+  |4-> "priority_preemp"
+  |5-> "rr"
+  |6-> "rm"
+  |7-> "edf"
   |_-> "POR IMPLEMENTAR"
 
 (* Funções para leitura de strings *)
