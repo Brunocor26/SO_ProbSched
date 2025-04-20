@@ -1,4 +1,4 @@
 (library
- (name prob_sched)
- (modules algorithms distributions process scheduler stats help)
+ (name prob_sched_lib)
+ (modules priority_queue process_generator process random_distributions statistics scheduler help)
 )

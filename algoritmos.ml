@@ -1,12 +1,3 @@
-type process = {
-  id : int;
-  arrival_time : float;
-  burst_time : float;
-  mutable remaining_time : float;
-  priority : int;
-  deadline : float option;  (* Some d para EDF, None para os outros *)
-}
-
 type stats = {
   waiting_time : float;
   turnaround_time : float;

@@ -1,56 +1,85 @@
-(* Importar os módulos *)
-open Prob_sched
-open Process
+open Prob_sched_lib
 open Help
-open Scheduler
 
-let next_pid = ref 0
 
-let generate_pid () =
-  let pid = !next_pid in
-  next_pid := !next_pid + 1;
-  pid
+let aplicar_algoritmo (lista : Process.t list) (opcao : string) : int option =
+  (* Converte a opção para minúsculas para ser case-insensitive *)
 
-let () =
-  Printf.printf "--- Criar Processo Manualmente ---\n";
-  let nome = ler_string "Nome do processo" in
-  let arrival_time = float_of_int (ler_int "Tempo de chegada") in
-  let burst_time = float_of_int (ler_int "Burst time (tempo de execução)") in
-  let priority = ler_int "Prioridade (quanto menor, maior prioridade)" in
+  Printf.printf "A tentar aplicar o algoritmo: %s\n" opcao; (* Feedback *)
 
-  let pid = generate_pid () in
-  let processo = create_process pid nome arrival_time burst_time priority Ready in
+  match opcao with
+  | "fcfs" ->
+      let tempo_total = Scheduler.fcfs lista in
+      Some tempo_total
 
-  Printf.printf "\n--- Processo Criado ---\n";
-  Printf.printf "PID: %d\n" processo.pid;
-  Printf.printf "Nome: %s\n" processo.name;
-  Printf.printf "Arrival: %.1f\n" processo.arrival_time;
-  Printf.printf "Burst: %.1f\n" processo.burst_time;
-  Printf.printf "Priority: %d\n" processo.priority;
-  Printf.printf "Completion: %s\n"
-    (match processo.completion_time with Some t -> Printf.sprintf "%.1f" t | None -> "N/A");
+  | _ ->
+      (* Caso a opção não corresponda a nenhum algoritmo conhecido *)
+      Printf.eprintf "Erro: Algoritmo de escalonamento '%s' não reconhecido.\n" opcao;
+      Printf.eprintf "Opções válidas (exemplo): fcfs, sjf, priority_np, priority_p, rr, rm, edf\n";
+      None (* Retorna None para indicar que o algoritmo não foi aplicado *)
 
-  let algoritmo = escolher_algoritmo () in
 
-  let result =
-    match algoritmo with
-    | "FCFS" -> fcfs [processo]
-    (* | "SJF" -> sjf [processo] *)
-    (* | "Priority_NP" -> priority_non_preemptive [processo] *)
-    (* | "Priority_P" -> priority_preemptive [processo] *)
-    (* | "RR" -> round_robin [processo] ~quantum:1.0 *)
-    | _ -> failwith "Algoritmo não implementado"
-  in
 
-  Printf.printf "\n--- Resultado %s ---\n" algoritmo;
-  List.iter (fun (start_time, pid) ->
-    Printf.printf "Início: %.1f | PID: %d\n" start_time pid
-  ) result.schedule;
-  List.iter (fun (proc, completion_time) ->
-    Printf.printf "PID: %d | Waiting: %.1f | Turnaround: %.1f | Completion: %.1f\n"
-      proc.pid
-      (completion_time -. proc.arrival_time -. proc.burst_time)
-      (completion_time -. proc.arrival_time)
-      completion_time
-  ) result.completed_processes;
+let main () =
+  let algoritmos_disp : string = "1->FCFS\n2->SJ\n3->Priority Scheduling\n4->Round Robin\n5->Rate Monotonic (Tempo Real)\n6->EDF (Tempo Real)\nEscolha o algoritmo a ser usado:\n" in
+  let opcao_alg : int = read_int_range algoritmos_disp 1 6 in (* Adjusted range to include 1-6 *)
+  
+  let algoritmo_string : string = escolha_algoritmo opcao_alg in
 
+  (* pedidos adicionais de certos algoritmos *)
+  match algoritmo_string with
+  | "fcfs" | "sj" | "priority" -> (* Non-realtime algorithms *)
+      let origem_processos : int = read_int_range "Processos através de:\n1->Lista estática\n2->Gerados\n" 1 2 in
+      (match origem_processos with
+      | 1 -> 
+          let nome_ficheiro : string = read_non_empty_string "Inserir nome do ficheiro a ser lido:\n" in
+          let atributos_processos : (int * int * int * int) list = ler_ficheiro_dados_processos nome_ficheiro in
+          let processos_extraidos : Process.t list =
+            List.map (fun (id, inicio, burst, prioridade) ->
+              Process.create
+                ~id:id
+                ~arrival_time:inicio
+                ~burst_time:burst
+                ~priority:prioridade
+                ()
+            ) atributos_processos
+          in
+          print_endline "Lista de processos lida com sucesso";
+
+          (match aplicar_algoritmo processos_extraidos algoritmo_string with
+          | Some tempo_final ->
+              Printf.printf "Simulação '%s' concluída em %d unidades de tempo.\n" algoritmo_string tempo_final;
+        
+              (* Calcular estatísticas usando a lista e o tempo_final *)
+              let stats = Statistics.calculate_statistics processos_extraidos tempo_final in
+        
+              (* Imprimir as estatísticas... *)
+              Printf.printf "Avg WT: %.2f, Avg TT: %.2f, CPU Util: %.2f%%, Throughput: %.4f, Deadline Misses: %d\n"
+                stats.avg_waiting_time
+                stats.avg_turnaround_time
+                stats.cpu_utilization
+                stats.throughput
+                stats.deadline_misses
+          | None ->
+              Printf.eprintf "Não foi possível executar a simulação para o algoritmo '%s'.\n" algoritmo_string
+          )
+      | 2 -> print_endline "Por implementar\n"
+      | _ -> (* This should never happen due to read_int_range, but compiler needs it *)
+          Printf.eprintf "Valor inválido para origem dos processos: %d\n" origem_processos
+      )
+  
+  | "rr" -> print_endline "Por implementar\n"
+  
+  | "rm" | "edf" -> (* Realtime algorithms *)
+      let origem_processos : int = read_int_range "Processos através de:\n1->Lista estática\n2->Gerados\n" 1 2 in
+      (match origem_processos with
+      | 1 -> print_endline "Depois meter aqui a funcao do read_file.ml\n"
+      | 2 -> print_endline "Por implementar\n"
+      | _ -> (* This should never happen due to read_int_range, but compiler needs it *)
+          Printf.eprintf "Valor inválido para origem dos processos: %d\n" origem_processos
+      )
+
+  
+  | _ -> print_endline "Algoritmo não reconhecido ou não implementado"
+
+let () = main ()
