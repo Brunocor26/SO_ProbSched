@@ -2,22 +2,73 @@ open Prob_sched_lib
 open Help
 
 
-let aplicar_algoritmo (lista : Process.t list) (opcao : string) : int option =
-  (* Converte a opção para minúsculas para ser case-insensitive *)
-
-  Printf.printf "A tentar aplicar o algoritmo: %s\n" opcao; (* Feedback *)
-
-  match opcao with
+(* Adaptar aplicar_algoritmo para retornar também o log *)
+let aplicar_algoritmo (lista : Process.t list) (opcao : string) : (int * Scheduler.timeline_event list) option =
+  let opcao_lower = String.lowercase_ascii opcao in
+  Printf.printf "A tentar aplicar o algoritmo: %s\n" opcao_lower;
+  match opcao_lower with
   | "fcfs" ->
-      let tempo_total = Scheduler.fcfs lista in
-      Some tempo_total
-
+      let tempo_total, log = Scheduler.fcfs lista in
+      Some (tempo_total, log)
+  (* ... outros casos, chamando as versões adaptadas dos schedulers ... *)
   | _ ->
-      (* Caso a opção não corresponda a nenhum algoritmo conhecido *)
-      Printf.eprintf "Erro: Algoritmo de escalonamento '%s' não reconhecido.\n" opcao;
-      Printf.eprintf "Opções válidas (exemplo): fcfs, sjf, priority_np, priority_p, rr, rm, edf\n";
-      None (* Retorna None para indicar que o algoritmo não foi aplicado *)
+      Printf.eprintf "Erro: Algoritmo '%s' não reconhecido ou não adaptado para timeline.\n" opcao;
+      None
 
+
+(* Função para imprimir a timeline (exemplo simples) *)
+let imprimir_timeline_simples (log : Scheduler.timeline_event list) (tempo_final : int) : unit =
+  print_endline "\n--- Timeline (Gráfico de Gantt Texto Simples) ---";
+  if log = [] then begin
+    print_endline "[Vazio]";
+    flush stdout;
+    ()
+  end else
+    (* Ordenar por tempo, caso não esteja garantido *)
+    let sorted_log = List.sort (fun e1 e2 -> compare e1.Scheduler.time e2.Scheduler.time) log in
+
+    (* Itera pelos eventos para construir a representação *)
+    let last_time = ref 0 in
+    let current_pid = ref (-1) in (* Começa Ocioso *)
+
+    List.iter (fun event ->
+      let time_interval = event.Scheduler.time - !last_time in
+      if time_interval > 0 then (
+        (* Imprime o que estava a correr no intervalo anterior *)
+        let symbol = if !current_pid = -1 then "[IDLE]" else Printf.sprintf "[ P%d ]" !current_pid in
+        for _ = 1 to time_interval do
+          Printf.printf "%s" symbol;
+        done;
+        flush stdout; (* Garante a impressão imediata *)
+      );
+
+      (* Atualiza o estado com base no evento atual *)
+      (* Esta lógica simplista assume que Running é o único estado ativo *)
+      (* Uma lógica mais robusta consideraria o estado exato do evento *)
+       (match event.Scheduler.new_state with
+         | Process.Running -> current_pid := event.Scheduler.process_id
+         | Process.Terminated when event.Scheduler.process_id = !current_pid -> current_pid := -1 (* Fica Idle *)
+         | Process.Ready when event.Scheduler.process_id = !current_pid -> current_pid := -1 (* Preempted, fica Idle temporariamente até próximo evento *)
+         | Process.Waiting when event.Scheduler.process_id = -1 -> current_pid := -1 (* Mantém Idle *)
+         | _ -> () (* Outros estados não mudam quem está a correr imediatamente *)
+        );
+
+      last_time := event.Scheduler.time;
+
+    ) sorted_log;
+
+     (* Imprime o último estado até ao tempo final, se necessário *)
+     let time_interval = tempo_final - !last_time in
+      if time_interval > 0 then (
+        let symbol = if !current_pid = -1 then "[IDLE]" else Printf.sprintf "[ P%d ]" !current_pid in
+        for _ = 1 to time_interval do
+          Printf.printf "%s" symbol;
+        done;
+          flush stdout;
+      );
+
+  print_endline "\n-------------------------------------------------";
+  flush stdout
 
 
 let main () =
@@ -47,7 +98,7 @@ let main () =
           print_endline "Lista de processos lida com sucesso";
 
           (match aplicar_algoritmo processos_extraidos algoritmo_string with
-          | Some tempo_final ->
+          | Some (tempo_final, log_eventos) ->
               Printf.printf "Simulação '%s' concluída em %d unidades de tempo.\n" algoritmo_string tempo_final;
         
               (* Calcular estatísticas usando a lista e o tempo_final *)
@@ -59,7 +110,11 @@ let main () =
                 stats.avg_turnaround_time
                 stats.cpu_utilization
                 stats.throughput
-                stats.deadline_misses
+                stats.deadline_misses;
+                
+              (* Imprimir a timeline *)
+              imprimir_timeline_simples log_eventos tempo_final
+
           | None ->
               Printf.eprintf "Não foi possível executar a simulação para o algoritmo '%s'.\n" algoritmo_string
           )
