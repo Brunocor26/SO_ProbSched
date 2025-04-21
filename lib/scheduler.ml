@@ -6,6 +6,13 @@ type timeline_event = {
   new_state : process_state;
 }
 
+(* Função auxiliar para obter o valor de uma opção ou lançar erro *)
+let get_option_value opt err_msg =
+  match opt with
+  | Some v -> v
+  | None -> failwith err_msg
+
+
 let log_event schedule_log t pid state =
   schedule_log := { time = t; process_id = pid; new_state = state } :: !schedule_log
 
