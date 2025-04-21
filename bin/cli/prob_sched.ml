@@ -11,12 +11,12 @@ let aplicar_algoritmo (lista : Process.t list) (opcao : string) : (int * Schedul
     | "fcfs" -> Some (Scheduler.fcfs lista)
     | "sjf" -> Some (Scheduler.sjf lista) 
     | "priority_np" -> Some (Scheduler.priority_non_preemptive lista)
-    (*| "priority_p" -> Some (Scheduler.priority_preemptive lista) (* Assume existe *)
+    | "priority_preemp" -> Some (Scheduler.priority_preemptive lista)
     | "rr" ->
         let quantum = read_int "Inserir time quantum:\n" in (* pedir ao user o time quantum desejado *)
         Printf.printf "  (Quantum = %d para Round Robin)\n" quantum;
         Some (Scheduler.round_robin ~quantum lista) (*chamar o algoritmo*)
-    | "rm" -> Some (Scheduler.rate_monotonic lista) (*chamar o algoritmo*)
+    (*| "rm" -> Some (Scheduler.rate_monotonic lista) (*chamar o algoritmo*)
     | "edf" -> Some (Scheduler.edf lista) (*chamar o algoritmo*)*)
     | _ ->
         Printf.eprintf "Erro: Algoritmo '%s' não reconhecido.\n" opcao; (* nao deve ocorrer *)
@@ -30,7 +30,7 @@ let aplicar_algoritmo (lista : Process.t list) (opcao : string) : (int * Schedul
 
 (* Imprime a timeline passo a passo *)
 let imprimir_timeline (log : Scheduler.timeline_event list) (tempo_final : int) : unit =
-  print_endline "\n--- Timeline (Passo a Passo) ---";
+  print_endline "\n--- Timeline ---";
   flush Stdlib.stdout;
 
   if tempo_final <= 0 then begin
