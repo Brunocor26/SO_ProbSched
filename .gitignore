@@ -1,8 +1,2 @@
-# Diretório principal de compilação do Dune
-_build/
-
-# VS Code
-.vscode/
-
 #Python virtual machine
 venv/
