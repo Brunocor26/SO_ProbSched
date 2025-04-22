@@ -88,8 +88,8 @@ def browse_file():
         file_path_var.set(filepath)
         # AGORA: Chama a função para carregar os dados do CSV para a tabela
         load_csv_to_table(filepath)
-        # Agora já pode carregar no botão 'Executar Simulação'
-        run_button.config(state=tk.NORMAL)
+        # Atualiza o estado do botão 'Executar Simulação'
+        update_run_button_state()
 
 # Função quando se carrega no botão 'Executar Simulação'
 def run_simulation():
@@ -97,16 +97,21 @@ def run_simulation():
     fpath = file_path_var.get()
     quantum = quantum_spinbox.get()
     max_time = max_time_spinbox.get()
-
-    if not fpath or fpath == "No file selected":
-        messagebox.showerror("Erro", "Por favor, escolha um ficheiro de processos.")
-        return
+    gen_num = gen_num_var.get()
 
     if not os.path.exists(OCAML_PATH):
         messagebox.showerror("Erro", f"Não encontrei o executável OCaml em:\n{OCAML_PATH}\nVerifique o caminho.")
         return
 
-    cmd = [OCAML_PATH, "--algo", algo, "--file", fpath]
+    # Decide se usa ficheiro ou geração aleatória
+    if gen_num > 0:
+        cmd = [OCAML_PATH, "--algo", algo, "--gen", str(gen_num)]
+    else:
+        if not fpath or fpath == "No file selected":
+            messagebox.showerror("Erro", "Por favor, escolha um ficheiro de processos ou indique um número para gerar aleatórios.")
+            return
+        cmd = [OCAML_PATH, "--algo", algo, "--file", fpath]
+
     if algo == "rr":
         cmd.extend(["--quantum", str(quantum)])
     if algo in ("rm", "edf"):
@@ -159,6 +164,14 @@ def run_simulation():
                 if output_data.get("success", False):
                     # Vai buscar o dicionário 'results' de dentro do JSON (ou um dicionário vazio se não existir)
                     results = output_data.get("results", {})
+                    # Mostra os processos gerados (aleatórios) se existirem, senão mostra os do campo "processes"
+                    if "processes_generated" in results:
+                        show_generated_processes(results["processes_generated"])
+                    elif "processes" in results:
+                        show_generated_processes(results["processes"])
+                    else:
+                        # Limpa a tabela se não houver processos (ex: erro ou simulação sem processos)
+                        show_generated_processes([])
                     # Vai buscar o dicionário 'stats' de dentro dos 'results' (ou vazio se não existir)
                     stats = results.get("stats", {})
 
@@ -289,6 +302,36 @@ def mostrar_gantt(timeline_string):
     plt.show()
 
 
+# Função para mostrar os processos gerados na tabela
+def show_generated_processes(processes):
+    # Limpa a tabela
+    for item in process_table.get_children():
+        process_table.delete(item)
+    # Adiciona cada processo à tabela
+    for proc in processes:
+        # proc = [id, start_time, burst_time, priority/period]
+        process_table.insert('', tk.END, values=proc)
+
+
+# Função para atualizar o estado do botão 'Executar Simulação'
+def update_run_button_state(*args):
+    if gen_num_var.get() > 0:
+        run_button.config(state=tk.NORMAL)
+        # Desativa procurar ficheiro
+        for child in input_frame.winfo_children():
+            if isinstance(child, ttk.Button) and child['text'] == "Procurar...":
+                child.config(state=tk.DISABLED)
+    else:
+        # Ativa procurar ficheiro
+        for child in input_frame.winfo_children():
+            if isinstance(child, ttk.Button) and child['text'] == "Procurar...":
+                child.config(state=tk.NORMAL)
+        if file_path_var.get() and file_path_var.get() != "No file selected":
+            run_button.config(state=tk.NORMAL)
+        else:
+            run_button.config(state=tk.DISABLED)
+
+
 # --- Configuração da Janela (Interface Gráfica com Tkinter) ---
 # Cria a janela principal da aplicação.
 root = tk.Tk()
@@ -309,6 +352,11 @@ avg_tt_var = tk.StringVar(value="N/A")
 cpu_util_var = tk.StringVar(value="N/A")
 throughput_var = tk.StringVar(value="N/A")
 deadline_misses_var = tk.StringVar(value="N/A")
+
+# Liga as variáveis ao estado do botão 'Executar Simulação'
+gen_num_var = tk.IntVar(value=0)
+gen_num_var.trace_add("write", update_run_button_state)
+file_path_var.trace_add("write", update_run_button_state)
 
 
 # --- Organização dos elementos na janela ---
@@ -365,6 +413,10 @@ max_time_label = ttk.Label(input_frame, text="Max Time (RM/EDF):")
 max_time_label.grid(row=3, column=0, sticky=tk.W, padx=5, pady=2)
 max_time_spinbox = ttk.Spinbox(input_frame, from_=1, to=1000, textvariable=max_time_var, width=5)
 max_time_spinbox.grid(row=3, column=1, sticky=tk.W, padx=5, pady=2)
+
+ttk.Label(input_frame, text="Gerar Aleatórios:").grid(row=4, column=0, sticky=tk.W, padx=5, pady=2)
+gen_num_spinbox = ttk.Spinbox(input_frame, from_=0, to=1000, textvariable=gen_num_var, width=7)
+gen_num_spinbox.grid(row=4, column=1, sticky=tk.W, padx=5, pady=2)
 
 # --- Botão Principal ---
 run_button = ttk.Button(left_column_frame, text="Executar Simulação", command=run_simulation, state=tk.DISABLED)

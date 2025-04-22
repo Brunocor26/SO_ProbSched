@@ -1,5 +1,5 @@
 (* Inicializa o gerador de aleatórios com uma semente *)
-let () = Random.init 42  (* muda o número para ter outra sequência *)
+let () = Random.self_init ()
 
 (* Exponencial: usa inversa da função de distribuição acumulada (CDF) *)
 let exponential lambda =

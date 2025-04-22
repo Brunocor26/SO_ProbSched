@@ -6,15 +6,25 @@ open Yojson.Basic
 let algo_ref = ref ""
 let file_ref = ref ""
 let quantum_ref = ref (None : int option)
-let max_time_ref = ref (None : int option)  (* NOVO *)
+let max_time_ref = ref (None : int option)
+let num_ref = ref None
 
 (* --- Especificação dos Argumentos --- *)
-let usage_msg = "Usage: " ^ Sys.argv.(0) ^ " --algo <name> --file <path> [--quantum <int>] [--max <int>]"
+let usage_msg =
+  "Usage: " ^ Sys.argv.(0) ^
+  " --algo <name> [--file <path> | --gen <num>] [--quantum <int>] [--max <int>]\n" ^
+  "  --file <path>   : Caminho para o ficheiro CSV de processos\n" ^
+  "  --gen <num>     : Gerar <num> processos aleatórios (alternativa a --file)\n" ^
+  "  --algo <name>   : Algoritmo (fcfs, sjf, priority_np, priority_preemp, rr, rm, edf)\n" ^
+  "  --quantum <int> : Quantum para RR\n" ^
+  "  --max <int>     : Tempo máximo de simulação (obrigatório para rm/edf)\n"
+
 let speclist = [
   ("--algo", Arg.Set_string algo_ref, " Scheduling algorithm (fcfs, sjf, priority_np, priority_preemp, rr, rm, edf)");
-  ("--file", Arg.Set_string file_ref, " Path to the process definition file");
+  ("--file", Arg.Set_string file_ref, " Path to the process definition file (alternativa a --gen)");
+  ("--gen", Arg.Int (fun n -> num_ref := Some n), "Número de processos a gerar aleatoriamente (alternativa a --file)");
   ("--quantum", Arg.Int (fun q -> quantum_ref := Some q), " Time quantum for Round Robin (required if --algo rr)");
-  ("--max", Arg.Int (fun m -> max_time_ref := Some m), " Max simulation time (required for rm/edf)");  (* NOVO *)
+  ("--max", Arg.Int (fun m -> max_time_ref := Some m), " Max simulation time (required for rm/edf)");
 ]
 
 (* --- Função de Saída JSON --- *)
@@ -60,7 +70,8 @@ let format_timeline_string (log : Scheduler.timeline_event list) (tempo_final : 
 (* --- Função principal que executa e imprime JSON --- *)
 let run_and_output () =
   try
-    if !algo_ref = "" || !file_ref = "" then failwith "Algorithm (--algo) and file (--file) are required.";
+    if !algo_ref = "" then failwith "Algorithm (--algo) is required.";
+    if !num_ref = None && !file_ref = "" then failwith "É necessário --file ou --gen.";
     if !algo_ref = "rr" && !quantum_ref = None then failwith "Quantum (--quantum) is required for Round Robin (rr).";
     let algo = !algo_ref in
     let filename = !file_ref in
@@ -70,21 +81,45 @@ let run_and_output () =
     let is_realtime = match algo with "rm" | "edf" -> true | _ -> false in
     if is_realtime && max_time = None then failwith "Max simulation time (--max) is required for rm/edf.";
 
-    let processos_iniciais =
-      try
-        if is_realtime then
-          Help.ler_ficheiro_dados_processos_rt filename
-          |> List.map (fun (id, inicio, burst, periodo) ->
-               Process.create ~id ~arrival_time:inicio ~burst_time:burst ~priority:periodo
-                 ?period:(Some periodo) ?deadline:(Some (inicio + periodo)) ())
-        else
-          Help.ler_ficheiro_dados_processos filename
-          |> List.map (fun (id, inicio, burst, prioridade) ->
-               Process.create ~id ~arrival_time:inicio ~burst_time:burst ~priority:prioridade ())
-      with
-      | Sys_error msg -> failwith ("Error accessing file '" ^ filename ^ "': " ^ msg)
-      | End_of_file -> failwith ("Unexpected end of file while reading '" ^ filename ^ "'.")
-      | ex -> failwith ("Error reading process file '" ^ filename ^ "': " ^ Printexc.to_string ex)
+    let (processos_tuplos, processos_iniciais) =
+      match !num_ref with
+      | Some n ->
+          let arrival_lambda = 1.0 in
+          let burst_mu = 5.0 in
+          let burst_sigma = 2.0 in
+          let tuplos = Process_generator.generate_processes
+            ~n
+            ~arrival_lambda
+            ~burst_mu
+            ~burst_sigma
+          in
+          let processos =
+            List.map (fun (id, arrival_time, burst_time, priority) ->
+              Process.create
+                ~id
+                ~arrival_time
+                ~burst_time
+                ~priority
+                ()
+            ) tuplos
+          in
+          (tuplos, processos)
+      | None ->
+          let tuplos = [] in
+          let processos =
+            if !file_ref = "" then failwith "É necessário --file ou --num."
+            else
+              if is_realtime then
+                Help.ler_ficheiro_dados_processos_rt filename
+                |> List.map (fun (id, inicio, burst, periodo) ->
+                     Process.create ~id ~arrival_time:inicio ~burst_time:burst ~priority:periodo
+                       ?period:(Some periodo) ?deadline:(Some (inicio + periodo)) ())
+              else
+                Help.ler_ficheiro_dados_processos filename
+                |> List.map (fun (id, inicio, burst, prioridade) ->
+                     Process.create ~id ~arrival_time:inicio ~burst_time:burst ~priority:prioridade ())
+          in
+          (tuplos, processos)
     in
 
     if processos_iniciais = [] then failwith ("No valid processes loaded from file '" ^ filename ^ "'.");
@@ -127,7 +162,16 @@ let run_and_output () =
                 ("file", `String filename);
                 ("final_time", `Int tempo_final);
                 ("stats", stats_to_json stats);
-                ("timeline_string", `String timeline_str)
+                ("timeline_string", `String timeline_str);
+                ("processes_generated",
+                  `List (List.map (fun (id, arrival_time, burst_time, priority) ->
+                    `List [
+                      `Int id;
+                      `Int arrival_time;
+                      `Int burst_time;
+                      `Int priority
+                    ]) processos_tuplos)
+                )
               ])
           ]
         in
