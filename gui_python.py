@@ -9,6 +9,8 @@ import json
 import os
 # Importar a biblioteca para ler ficheiros CSV.
 import csv
+# Importar biblioteca para gráficos de Gantt
+import matplotlib.pyplot as plt
 
 # caminho para o programa gerado pelo Dune
 OCAML_PATH = "./_build/default/bin/prob_sched.exe"
@@ -189,6 +191,9 @@ def run_simulation():
                     timeline_text.insert(tk.END, results.get("timeline_string", "[Dados da timeline em falta]"))
                     timeline_text.config(state=tk.DISABLED)
 
+                    # Mostra o gráfico de Gantt
+                    mostrar_gantt(results.get("timeline_string", ""))
+
                     # Avisa na barra de estado que terminou.
                     status_var.set("Simulação completa.")
                 # Se o programa OCaml não deu erro (código 0), mas o JSON diz que algo correu mal ("success": false)...
@@ -234,6 +239,58 @@ def clear_results():
       timeline_text.config(state=tk.NORMAL) # Torna editável
       timeline_text.delete('1.0', tk.END)   # Apaga tudo
       timeline_text.config(state=tk.DISABLED) # Torna só de leitura
+
+
+# Função para mostrar o gráfico de Gantt
+def mostrar_gantt(timeline_string):
+    """
+    Espera uma string da timeline no formato: [P1][P2][P2][P1]...
+    Cada bloco representa o processo ativo em cada unidade de tempo.
+    """
+    import re
+
+    # Extrai os nomes dos processos na ordem
+    processos = re.findall(r'\[(.*?)\]', timeline_string)
+    if not processos:
+        messagebox.showinfo("Gantt", "Não há dados de timeline para mostrar.")
+        return
+
+    # Agrupa intervalos contínuos do mesmo processo
+    tasks = []
+    if processos:
+        atual = processos[0]
+        inicio = 0
+        for t, nome in enumerate(processos[1:], 1):
+            if nome != atual:
+                tasks.append((atual, inicio, t))
+                atual = nome
+                inicio = t
+        tasks.append((atual, inicio, len(processos)))  # último intervalo
+
+    if not tasks:
+        messagebox.showinfo("Gantt", "Não há dados de timeline para mostrar.")
+        return
+
+    # Desenha o gráfico de Gantt
+    fig, ax = plt.subplots(figsize=(10, 2 + 0.5 * len(set(t[0] for t in tasks))))
+    ylabels = []
+    yticks = []
+    nomes_unicos = sorted(set(t[0] for t in tasks))
+    for idx, nome in enumerate(nomes_unicos):
+        ylabels.append(nome)
+        yticks.append(idx)
+        for tsk in tasks:
+            if tsk[0] == nome:
+                ax.barh(idx, tsk[2] - tsk[1], left=tsk[1], height=0.4, align='center')
+                ax.text((tsk[1]+tsk[2])/2, idx, f"{tsk[1]}-{tsk[2]}", va='center', ha='center', color='white', fontsize=8)
+
+    ax.set_yticks(yticks)
+    ax.set_yticklabels(ylabels)
+    ax.set_xlabel('Tempo')
+    ax.set_title('Gráfico de Gantt da Execução dos Processos')
+    ax.grid(True, axis='x', linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    plt.show()
 
 
 # --- Configuração da Janela (Interface Gráfica com Tkinter) ---

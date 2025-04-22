@@ -3,3 +3,6 @@ _build/
 
 # VS Code
 .vscode/
+
+#Python virtual machine
+venv/
