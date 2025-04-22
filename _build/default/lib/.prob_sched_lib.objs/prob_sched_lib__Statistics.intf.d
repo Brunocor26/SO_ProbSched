@@ -1,1 +1,1 @@
-lib/statistics.mli: Process
+lib/statistics.mli: Process Scheduler

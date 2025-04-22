@@ -12,6 +12,30 @@ let get_option_value opt err_msg =
   | Some v -> v
   | None -> failwith err_msg
 
+  let gerar_instancias_periodicas processos tempo_max =
+  let instancias = ref [] in
+  List.iter (fun p ->
+    match p.period, p.deadline with
+    | Some per, Some dl ->
+        let rec gera t =
+          if t < tempo_max then (
+            let nova_inst = { p with
+              arrival_time = t;
+              deadline = Some (t + dl);
+              remaining_burst_time = p.burst_time;
+              state = Ready;
+              completion_time = None;
+              turnaround_time = None;
+              waiting_time = 0;
+            } in
+            instancias := nova_inst :: !instancias;
+            gera (t + per)
+          )
+        in
+        gera p.arrival_time
+    | _ -> ()
+  ) processos;
+  !instancias
 
 let log_event schedule_log t pid state =
   schedule_log := { time = t; process_id = pid; new_state = state } :: !schedule_log
@@ -266,5 +290,163 @@ let round_robin (processes : t list) ~(quantum : int) : int * timeline_event lis
         log_event schedule_log !time (-1) Ready;
       )
     )
+  done;
+  (!time, List.rev !schedule_log)
+
+let rate_monotonic (processes : t list) ~(tempo_max:int) : int * timeline_event list =
+  let instancias = gerar_instancias_periodicas processes tempo_max in
+  let time = ref 0 in
+  let schedule_log = ref [] in
+  let completed_count = ref 0 in
+  let num_processes = List.length instancias in
+  let incoming = ref (sort_by_arrival instancias) in
+  let ready_queue = Priority_queue.create (fun p ->
+    match p.period with
+    | Some period -> period
+    | None -> failwith "Processo sem período para Rate Monotonic"
+  ) in
+  let deadline_misses = ref 0 in
+  List.iter reset_process instancias;
+  let running_process = ref None in
+  while !completed_count < num_processes && !time < tempo_max do
+    let arrived_now = List.filter (fun p -> p.arrival_time <= !time) !incoming in
+    if arrived_now <> [] then (
+      List.iter (fun p -> Priority_queue.add ready_queue p) arrived_now;
+      incoming := List.filter (fun p -> p.arrival_time > !time) !incoming
+    );
+    List.iter (fun p ->
+      match p.deadline with
+      | Some dl when !time > dl && p.state <> Terminated ->
+          incr deadline_misses;
+          p.state <- Terminated
+      | _ -> ()
+    ) instancias;
+    let preempt_needed =
+      match !running_process with
+      | Some rp ->
+        begin
+          match Priority_queue.peek_opt ready_queue with
+          | Some next_p when (get_option_value next_p.period "Erro") < (get_option_value rp.period "Erro") -> true
+          | _ -> false
+        end
+      | None -> not (Priority_queue.is_empty ready_queue)
+    in
+    if preempt_needed then (
+      match !running_process with
+      | Some rp ->
+        log_event schedule_log !time rp.id Ready;
+        rp.state <- Ready;
+        Priority_queue.add ready_queue rp;
+        running_process := None
+      | None -> ()
+    );
+    if !running_process = None && not (Priority_queue.is_empty ready_queue) then (
+      let next_process = Priority_queue.take ready_queue in
+      running_process := Some next_process;
+      log_event schedule_log !time next_process.id Running;
+      next_process.state <- Running;
+    );
+    (match !running_process with
+    | Some rp ->
+        if !time < rp.arrival_time then (
+          log_event schedule_log !time (-1) Waiting;
+          time := rp.arrival_time;
+          log_event schedule_log !time (-1) Ready;
+        );
+        rp.remaining_burst_time <- rp.remaining_burst_time - 1;
+        if rp.remaining_burst_time = 0 then (
+          let completion_time = !time + 1 in
+          rp.state <- Terminated;
+          rp.completion_time <- Some completion_time;
+          rp.turnaround_time <- Some (completion_time - rp.arrival_time);
+          rp.waiting_time <- completion_time - rp.arrival_time - rp.burst_time;
+          log_event schedule_log completion_time rp.id Terminated;
+          running_process := None;
+          completed_count := !completed_count + 1;
+        )
+    | None ->
+        if List.exists (fun p -> p.state <> Terminated) instancias then
+          log_event schedule_log !time (-1) Waiting
+    );
+    time := !time + 1;
+  done;
+  (!time, List.rev !schedule_log)
+
+let edf (processes : t list) ~(tempo_max:int) : int * timeline_event list =
+  let instancias = gerar_instancias_periodicas processes tempo_max in
+  let time = ref 0 in
+  let schedule_log = ref [] in
+  let completed_count = ref 0 in
+  let num_processes = List.length instancias in
+  let incoming = ref (sort_by_arrival instancias) in
+  let ready_queue = Priority_queue.create (fun p ->
+    match p.deadline with
+    | Some deadline -> deadline
+    | None -> failwith "Processo sem deadline para Earliest Deadline First"
+  ) in
+  let deadline_misses = ref 0 in
+  List.iter reset_process instancias;
+  let running_process = ref None in
+  while !completed_count < num_processes && !time < tempo_max do
+    let arrived_now = List.filter (fun p -> p.arrival_time <= !time) !incoming in
+    if arrived_now <> [] then (
+      List.iter (fun p -> Priority_queue.add ready_queue p) arrived_now;
+      incoming := List.filter (fun p -> p.arrival_time > !time) !incoming
+    );
+    List.iter (fun p ->
+      match p.deadline with
+      | Some dl when !time > dl && p.state <> Terminated ->
+          incr deadline_misses;
+          p.state <- Terminated
+      | _ -> ()
+    ) instancias;
+    let preempt_needed =
+      match !running_process with
+      | Some rp ->
+        begin
+          match Priority_queue.peek_opt ready_queue with
+          | Some next_p when (get_option_value next_p.deadline "Erro") < (get_option_value rp.deadline "Erro") -> true
+          | _ -> false
+        end
+      | None -> not (Priority_queue.is_empty ready_queue)
+    in
+    if preempt_needed then (
+      match !running_process with
+      | Some rp ->
+        log_event schedule_log !time rp.id Ready;
+        rp.state <- Ready;
+        Priority_queue.add ready_queue rp;
+        running_process := None
+      | None -> ()
+    );
+    if !running_process = None && not (Priority_queue.is_empty ready_queue) then (
+      let next_process = Priority_queue.take ready_queue in
+      running_process := Some next_process;
+      log_event schedule_log !time next_process.id Running;
+      next_process.state <- Running;
+    );
+    (match !running_process with
+    | Some rp ->
+        if !time < rp.arrival_time then (
+          log_event schedule_log !time (-1) Waiting;
+          time := rp.arrival_time;
+          log_event schedule_log !time (-1) Ready;
+        );
+        rp.remaining_burst_time <- rp.remaining_burst_time - 1;
+        if rp.remaining_burst_time = 0 then (
+          let completion_time = !time + 1 in
+          rp.state <- Terminated;
+          rp.completion_time <- Some completion_time;
+          rp.turnaround_time <- Some (completion_time - rp.arrival_time);
+          rp.waiting_time <- completion_time - rp.arrival_time - rp.burst_time;
+          log_event schedule_log completion_time rp.id Terminated;
+          running_process := None;
+          completed_count := !completed_count + 1;
+        )
+    | None ->
+        if List.exists (fun p -> p.state <> Terminated) instancias then
+          log_event schedule_log !time (-1) Waiting
+    );
+    time := !time + 1;
   done;
   (!time, List.rev !schedule_log)

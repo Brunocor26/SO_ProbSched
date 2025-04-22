@@ -1,67 +1,80 @@
-(* Colocar num ficheiro stats.ml ou similar *)
+open Process
+open Scheduler
 
-(* Estatísticas calculadas após a simulação *)
 type simulation_stats = {
+  total_simulation_time : int;
+  total_processes_completed : int;
   avg_waiting_time : float;
   avg_turnaround_time : float;
-  cpu_utilization : float; (* Percentagem 0.0-100.0 *)
-  throughput : float; (* Processos por unidade de tempo *)
-  total_simulation_time : int;
-  total_processes_completed : int;  
-  deadline_misses : int; (* Número de processos que falharam o deadline *)
+  cpu_utilization : float;
+  throughput : float;
+  deadline_misses : int;
 }
 
-(* Função para calcular estatísticas (a implementar depois) *)
-let calculate_statistics (completed_processes : Process.t list) (total_time : int) : simulation_stats =
-  let num_processes = List.length completed_processes in
-  if num_processes = 0 || total_time = 0 then
-    (* Evitar divisão por zero e retornar stats vazias/default *)
-    {
-      avg_waiting_time = 0.0;
-      avg_turnaround_time = 0.0;
-      cpu_utilization = 0.0;
-      throughput = 0.0;
-      total_simulation_time = total_time;
-      total_processes_completed = 0;
-      deadline_misses = 0;
-    }
-  else
-    let total_waiting = ref 0 in
-    let total_turnaround = ref 0 in
-    let total_burst = ref 0 in
-    let deadline_misses_count = ref 0 in
+let calculate_statistics (processos : t list) (tempo_final : int) (log : timeline_event list) : simulation_stats =
+  let total_completed = List.length processos in
 
-    List.iter (fun p ->
-      (* Assumimos que waiting_time foi calculado e guardado no processo pelo escalonador *)
-      total_waiting := !total_waiting + p.Process.waiting_time;
+  let total_waiting_time =
+    List.fold_left (fun acc p -> acc + p.waiting_time) 0 processos
+  in
+  let total_turnaround_time =
+    List.fold_left (fun acc p ->
+      match p.turnaround_time with
+      | Some tat -> acc + tat
+      | None -> acc
+    ) 0 processos
+  in
 
-      (* Calculamos turnaround a partir do completion_time e arrival_time *)
-      let tt = match p.Process.completion_time with
-              | None -> 0 (* Processo não completou? Deveria ter completado nesta lista *)
-              | Some ct -> ct - p.Process.arrival_time
-      in
-      total_turnaround := !total_turnaround + tt;
-      p.Process.turnaround_time <- Some tt; (* Atualiza o campo no processo *)
+  (* Utilização do CPU: percentagem de tempo em que process_id <> -1 *)
+  let total_time = float_of_int tempo_final in
+  let idle_time = List.fold_left (fun acc ev -> if ev.process_id = -1 then acc + 1 else acc) 0 log in
+  let cpu_utilization =
+    if tempo_final > 0 then (1.0 -. (float_of_int idle_time /. total_time)) *. 100.0 else 0.0
+  in
 
-      total_burst := !total_burst + p.Process.burst_time; (* Soma dos tempos de burst originais *)
+  let avg_waiting_time =
+    if total_completed > 0 then (float_of_int total_waiting_time) /. (float_of_int total_completed) else 0.0
+  in
+  let avg_turnaround_time =
+    if total_completed > 0 then (float_of_int total_turnaround_time) /. (float_of_int total_completed) else 0.0
+  in
+  let throughput =
+    if tempo_final > 0 then (float_of_int total_completed) /. (float_of_int tempo_final) else 0.0
+  in
 
-      (* Verifica deadline misses *)
-      match p.Process.deadline, p.Process.completion_time with
-      | Some dl, Some ct when ct > (p.Process.arrival_time + dl) -> (* Assumindo deadline relativo à chegada *)
-          incr deadline_misses_count
+  (* Deadlines falhadas: conta processos terminados depois do deadline *)
+  let deadline_misses =
+    let missed_set = Hashtbl.create 10 in
+    List.iter (fun event ->
+      match event.new_state with
+      | Process.Terminated -> (
+          let pid = event.process_id in
+          match List.find_opt (fun p -> p.id = pid) processos with
+          | Some p -> (
+              match p.deadline, p.completion_time with
+              | Some deadline, Some ct ->
+                  let abs_deadline = p.arrival_time + deadline in
+                  if ct > abs_deadline then
+                    Hashtbl.replace missed_set (pid, abs_deadline) true
+              | Some deadline, None ->
+                  let abs_deadline = p.arrival_time + deadline in
+                  if tempo_final > abs_deadline then
+                    Hashtbl.replace missed_set (pid, abs_deadline) true
+              | _ -> ()
+            )
+          | None -> ()
+        )
       | _ -> ()
-    ) completed_processes;
+    ) log;
+    Hashtbl.length missed_set
+  in
 
-    let n = float_of_int num_processes in
-    let tot_time = float_of_int total_time in
-    let busy_time = float_of_int !total_burst in
-
-    {
-      avg_waiting_time = float_of_int !total_waiting /. n;
-      avg_turnaround_time = float_of_int !total_turnaround /. n;
-      cpu_utilization = (busy_time /. tot_time) *. 100.0;
-      throughput = n /. tot_time;
-      total_simulation_time = total_time;
-      total_processes_completed = num_processes;
-      deadline_misses = !deadline_misses_count;
-    }
+  {
+    total_simulation_time = tempo_final;
+    total_processes_completed = total_completed;
+    avg_waiting_time;
+    avg_turnaround_time;
+    cpu_utilization;
+    throughput;
+    deadline_misses;
+  }

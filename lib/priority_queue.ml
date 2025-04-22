@@ -49,8 +49,19 @@ let peek (pq : 'a t) : 'a =
   | [] -> raise Not_found (* Ou poderia devolver 'a option *)
   | head :: _ -> head
 
+(* Devolve (sem remover) o elemento com maior prioridade (menor valor numérico) como opção.
+   Devolve None se a fila estiver vazia.
+   Complexidade: O(1). *)
+let peek_opt (pq : 'a t) : 'a option =
+  match pq.items with
+  | [] -> None
+  | h :: _ -> Some h
+
 (* Devolve o número de elementos na fila.
    Complexidade: O(n) para List.length. Se for chamado frequentemente,
    poderia manter-se um campo 'size' mutável para ter O(1). *)
 let size (pq : 'a t) : int =
   List.length pq.items
+
+let exists (pq : 'a t) (pred : 'a -> bool) : bool =
+  List.exists pred pq.items

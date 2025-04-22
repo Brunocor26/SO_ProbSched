@@ -93,31 +93,24 @@ def browse_file():
 
 # Função quando se carrega no botão 'Executar Simulação'
 def run_simulation():
-    # Vai buscar o algoritmo escolhido na lista (ComboBox)
     algo = algo_combo.get()
-    # Vai buscar o caminho do ficheiro que foi escolhido
     fpath = file_path_var.get()
-    # Vai buscar o valor do quantum (só interessa para o Round Robin)
     quantum = quantum_spinbox.get()
+    max_time = max_time_spinbox.get()
 
-    # Verifica se foi mesmo escolhido o ficheiro
     if not fpath or fpath == "No file selected":
-        # Se não escolheu, mostra erro
         messagebox.showerror("Erro", "Por favor, escolha um ficheiro de processos.")
         return
 
-    # Ver se o programa OCaml está no PATH
     if not os.path.exists(OCAML_PATH):
         messagebox.showerror("Erro", f"Não encontrei o executável OCaml em:\n{OCAML_PATH}\nVerifique o caminho.")
         return
 
-    # Cria variavel que vai guardar o comando para chamar o programa OCaml
-    # Exemplo: ["./_build/default/bin/prob_sched.exe", "--algo", "fcfs", "--file", "processos.txt"]
     cmd = [OCAML_PATH, "--algo", algo, "--file", fpath]
-    # Se for Round Robin (rr), temos que adicionar o quantum ao comando
-    if algo == "rr": # Assumindo que "rr" é o nome na ComboBox e no OCaml
-        # Junta '--quantum' e o valor convertido à lista de argumentos.
+    if algo == "rr":
         cmd.extend(["--quantum", str(quantum)])
+    if algo in ("rm", "edf"):
+        cmd.extend(["--max", str(max_time)])
 
     # Escreve na barra de estado em baixo o que esta a fazer
     status_var.set(f"A executar {algo} em {os.path.basename(fpath)}...")
@@ -271,6 +264,9 @@ def mostrar_gantt(timeline_string):
         messagebox.showinfo("Gantt", "Não há dados de timeline para mostrar.")
         return
 
+    # Substitui "-" por "CPU IDLE" para visualização
+    tasks = [("CPU IDLE" if nome == "-" else nome, inicio, fim) for (nome, inicio, fim) in tasks]
+
     # Desenha o gráfico de Gantt
     fig, ax = plt.subplots(figsize=(10, 2 + 0.5 * len(set(t[0] for t in tasks))))
     ylabels = []
@@ -305,6 +301,7 @@ root.geometry("1200x600") # Ajusta conforme necessário
 file_path_var = tk.StringVar(value="No file selected")
 algo_var = tk.StringVar()
 quantum_var = tk.IntVar(value=5)
+max_time_var = tk.IntVar(value=100)
 status_var = tk.StringVar(value="Pronto.")
 # Variáveis para mostrar as estatísticas (começam todas com 'N/A').
 avg_wt_var = tk.StringVar(value="N/A")
@@ -363,6 +360,11 @@ quantum_label = ttk.Label(input_frame, text="Quantum (RR):")
 quantum_label.grid(row=2, column=0, sticky=tk.W, padx=5, pady=2)
 quantum_spinbox = ttk.Spinbox(input_frame, from_=1, to=100, textvariable=quantum_var, width=5)
 quantum_spinbox.grid(row=2, column=1, sticky=tk.W, padx=5, pady=2)
+
+max_time_label = ttk.Label(input_frame, text="Max Time (RM/EDF):")
+max_time_label.grid(row=3, column=0, sticky=tk.W, padx=5, pady=2)
+max_time_spinbox = ttk.Spinbox(input_frame, from_=1, to=1000, textvariable=max_time_var, width=5)
+max_time_spinbox.grid(row=3, column=1, sticky=tk.W, padx=5, pady=2)
 
 # --- Botão Principal ---
 run_button = ttk.Button(left_column_frame, text="Executar Simulação", command=run_simulation, state=tk.DISABLED)

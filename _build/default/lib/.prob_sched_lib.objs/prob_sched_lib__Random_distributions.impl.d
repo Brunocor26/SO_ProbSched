@@ -1,1 +1,1 @@
-lib/random_distributions.ml:
+lib/random_distributions.ml: Float Random
