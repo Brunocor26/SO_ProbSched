@@ -47,22 +47,38 @@ let format_timeline_string (log : Scheduler.timeline_event list) (tempo_final : 
     let sorted_log = List.sort (fun e1 e2 -> compare e1.Scheduler.time e2.Scheduler.time) log in
     let log_ref = ref sorted_log in
     let running_pid = ref (-1) in
+    
     for t = 0 to tempo_final - 1 do
       let rec process_events_at_t current_t =
         match !log_ref with
         | event :: rest when event.Scheduler.time = current_t ->
             (match event.Scheduler.new_state with
-             | Process.Running -> running_pid := event.Scheduler.process_id
-             | Process.Terminated when event.Scheduler.process_id = !running_pid -> running_pid := -1
-             | Process.Ready when event.Scheduler.process_id = !running_pid -> running_pid := -1
-             | Process.Waiting when event.Scheduler.process_id = -1 -> running_pid := -1
+             | Process.Running -> 
+                 running_pid := event.Scheduler.process_id
+             | Process.Terminated when event.Scheduler.process_id = !running_pid -> 
+                 running_pid := -1
+             | Process.Ready when event.Scheduler.process_id = !running_pid -> 
+                 running_pid := -1
+             | Process.Waiting when event.Scheduler.process_id = -1 -> 
+                 running_pid := -1
              | _ -> ());
             log_ref := rest;
             process_events_at_t current_t
         | _ -> ()
       in
       process_events_at_t t;
-      let symbol = if !running_pid = -1 then "[-]" else Printf.sprintf "[P%d]" !running_pid in
+      let symbol = 
+        if !running_pid = -1 then "[-]"
+        else 
+          (* Extract original process ID by dividing by 1000 *)
+          let original_id = 
+            if !running_pid >= 1000 then
+              !running_pid / 1000  (* For instance 1001 -> process 1 *)
+            else
+              !running_pid
+          in
+          Printf.sprintf "[P%d]" original_id
+      in
       Buffer.add_string buffer symbol
     done;
     Buffer.contents buffer
@@ -87,23 +103,48 @@ let run_and_output () =
           let arrival_lambda = 1.0 in
           let burst_mu = 5.0 in
           let burst_sigma = 2.0 in
-          let tuplos = Process_generator.generate_processes
-            ~n
-            ~arrival_lambda
-            ~burst_mu
-            ~burst_sigma
-          in
-          let processos =
-            List.map (fun (id, arrival_time, burst_time, priority) ->
-              Process.create
-                ~id
-                ~arrival_time
-                ~burst_time
-                ~priority
-                ()
-            ) tuplos
-          in
-          (tuplos, processos)
+          if is_realtime then
+            let period_mu = 8.0 in
+            let period_sigma = 3.0 in
+            let tuplos = Process_generator.generate_processes_rt
+              ~n
+              ~arrival_lambda
+              ~burst_mu
+              ~burst_sigma
+              ~period_mu
+              ~period_sigma
+            in
+            let processos =
+              List.map (fun (id, arrival_time, burst_time, period) ->
+                Process.create
+                  ~id
+                  ~arrival_time
+                  ~burst_time
+                  ~priority:id  (* Store original ID in priority field *)
+                  ?period:(Some period)
+                  ?deadline:(Some (arrival_time + period))
+                  ()
+              ) tuplos
+            in
+            (tuplos, processos)
+          else
+            let tuplos = Process_generator.generate_processes
+              ~n
+              ~arrival_lambda
+              ~burst_mu
+              ~burst_sigma
+            in
+            let processos =
+              List.map (fun (id, arrival_time, burst_time, priority) ->
+                Process.create
+                  ~id
+                  ~arrival_time
+                  ~burst_time
+                  ~priority
+                  ()
+              ) tuplos
+            in
+            (tuplos, processos)
       | None ->
           let tuplos = [] in
           let processos =
@@ -112,7 +153,7 @@ let run_and_output () =
               if is_realtime then
                 Help.ler_ficheiro_dados_processos_rt filename
                 |> List.map (fun (id, inicio, burst, periodo) ->
-                     Process.create ~id ~arrival_time:inicio ~burst_time:burst ~priority:periodo
+                     Process.create ~id ~arrival_time:inicio ~burst_time:burst ~priority:id
                        ?period:(Some periodo) ?deadline:(Some (inicio + periodo)) ())
               else
                 Help.ler_ficheiro_dados_processos filename
@@ -137,12 +178,12 @@ let run_and_output () =
         | "rm" -> (match max_time with
                   | Some m ->
                       let insts = Scheduler.gerar_instancias_periodicas processos_iniciais m in
-                      (Some (Scheduler.rate_monotonic ~tempo_max:m processos_iniciais), insts)
+                      (Some (Scheduler.rate_monotonic ~tempo_max:m insts), insts)
                   | None -> failwith "Internal error: Max time missing for RM")
         | "edf"-> (match max_time with
                   | Some m ->
                       let insts = Scheduler.gerar_instancias_periodicas processos_iniciais m in
-                      (Some (Scheduler.edf ~tempo_max:m processos_iniciais), insts)
+                      (Some (Scheduler.edf ~tempo_max:m insts), insts)
                   | None -> failwith "Internal error: Max time missing for EDF")
         | _ -> failwith ("Algorithm '" ^ algo ^ "' not recognized or implemented."), processos_iniciais
       with ex -> failwith ("Error during simulation for algorithm '" ^ algo ^ "': " ^ Printexc.to_string ex), processos_iniciais

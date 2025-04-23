@@ -103,6 +103,11 @@ def run_simulation():
         messagebox.showerror("Erro", f"Não encontrei o executável OCaml em:\n{OCAML_PATH}\nVerifique o caminho.")
         return
 
+    # Antes de correr a simulação:
+    if gen_num > 0:
+        show_generated_processes([])  # Limpa a tabela só para geração aleatória
+    clear_results()  # Limpa só os resultados da simulação (estatísticas, timeline, etc.)
+
     # Decide se usa ficheiro ou geração aleatória
     if gen_num > 0:
         cmd = [OCAML_PATH, "--algo", algo, "--gen", str(gen_num)]
@@ -315,7 +320,11 @@ def show_generated_processes(processes):
 
 # Função para atualizar o estado do botão 'Executar Simulação'
 def update_run_button_state(*args):
-    if gen_num_var.get() > 0:
+    try:
+        gen_num = int(gen_num_var.get())
+    except (tk.TclError, ValueError):
+        gen_num = 0
+    if gen_num > 0:
         run_button.config(state=tk.NORMAL)
         # Desativa procurar ficheiro
         for child in input_frame.winfo_children():
@@ -457,7 +466,7 @@ status_bar.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(5,0)) # Ocupa a larg
 # --- Coluna da Direita (Tabela CSV) ---
 
 # Cria uma 'caixa' com título para a tabela de processos
-table_frame = ttk.LabelFrame(main_frame, text="Processos (do ficheiro atual)", padding="10")
+table_frame = ttk.LabelFrame(main_frame, text="Processos em tabela", padding="10")
 # Coloca esta frame na coluna 1 do main_frame, ocupando as linhas 0 a 2 (mesma altura dos controlos/outputs)
 table_frame.grid(row=0, column=1, rowspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 5)) # rowspan=3 para alinhar com input+button+output
 # Configura a grelha interna do table_frame para a tabela e scrollbar esticarem
