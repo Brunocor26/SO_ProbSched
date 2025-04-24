@@ -8,16 +8,18 @@ let file_ref = ref ""
 let quantum_ref = ref (None : int option)
 let max_time_ref = ref (None : int option)
 let num_ref = ref None
+let human_ref = ref false  (* <-- NOVO *)
 
 (* --- Especificação dos Argumentos --- *)
 let usage_msg =
   "Usage: " ^ Sys.argv.(0) ^
-  " --algo <name> [--file <path> | --gen <num>] [--quantum <int>] [--max <int>]\n" ^
+  " --algo <name> [--file <path> | --gen <num>] [--quantum <int>] [--max <int>] [--human]\n" ^
   "  --file <path>   : Caminho para o ficheiro CSV de processos\n" ^
   "  --gen <num>     : Gerar <num> processos aleatórios (alternativa a --file)\n" ^
   "  --algo <name>   : Algoritmo (fcfs, sjf, priority_np, priority_preemp, rr, rm, edf)\n" ^
   "  --quantum <int> : Quantum para RR\n" ^
-  "  --max <int>     : Tempo máximo de simulação (obrigatório para rm/edf)\n"
+  "  --max <int>     : Tempo máximo de simulação (obrigatório para rm/edf)\n" ^
+  "  --human         : Output legível para humanos\n"
 
 let speclist = [
   ("--algo", Arg.Set_string algo_ref, " Scheduling algorithm (fcfs, sjf, priority_np, priority_preemp, rr, rm, edf)");
@@ -25,6 +27,7 @@ let speclist = [
   ("--gen", Arg.Int (fun n -> num_ref := Some n), "Número de processos a gerar aleatoriamente (alternativa a --file)");
   ("--quantum", Arg.Int (fun q -> quantum_ref := Some q), " Time quantum for Round Robin (required if --algo rr)");
   ("--max", Arg.Int (fun m -> max_time_ref := Some m), " Max simulation time (required for rm/edf)");
+  ("--human", Arg.Set human_ref, " Output legível para humanos");
 ]
 
 (* --- Função de Saída JSON --- *)
@@ -83,7 +86,26 @@ let format_timeline_string (log : Scheduler.timeline_event list) (tempo_final : 
     done;
     Buffer.contents buffer
 
-(* --- Função principal que executa e imprime JSON --- *)
+(* --- Função para imprimir resultados em formato humano --- *)
+let print_human_readable algo filename tempo_final stats timeline_str processos_tuplos =
+  Printf.printf "Algoritmo: %s\n" algo;
+  if filename <> "" then Printf.printf "Ficheiro: %s\n" filename;
+  Printf.printf "Tempo final: %d\n" tempo_final;
+  Printf.printf "\n--- Estatísticas ---\n";
+  Printf.printf "Total de processos terminados: %d\n" stats.Statistics.total_processes_completed;
+  Printf.printf "Tempo médio de espera: %.2f\n" stats.Statistics.avg_waiting_time;
+  Printf.printf "Tempo médio de turnaround: %.2f\n" stats.Statistics.avg_turnaround_time;
+  Printf.printf "Utilização da CPU: %.2f%%\n" stats.Statistics.cpu_utilization;
+  Printf.printf "Throughput: %.2f\n" stats.Statistics.throughput;
+  Printf.printf "Deadline misses: %d\n" stats.Statistics.deadline_misses;
+  Printf.printf "\n--- Timeline ---\n%s\n" timeline_str;
+  Printf.printf "\n--- Processos Gerados ---\n";
+  List.iter (fun (id, arrival_time, burst_time, priority) ->
+    Printf.printf "ID: %d | Chegada: %d | Burst: %d | Prioridade/Período: %d\n"
+      id arrival_time burst_time priority
+  ) processos_tuplos
+
+(* --- Função principal que executa e imprime JSON ou humano --- *)
 let run_and_output () =
   try
     if !algo_ref = "" then failwith "Algorithm (--algo) is required.";
@@ -195,28 +217,31 @@ let run_and_output () =
         let stats = Statistics.calculate_statistics processos_para_stats tempo_final log_eventos in
         let timeline_str = format_timeline_string log_eventos tempo_final in
 
-        let json_output =
-          `Assoc [
-            ("success", `Bool true);
-            ("results", `Assoc [
-                ("algorithm", `String algo);
-                ("file", `String filename);
-                ("final_time", `Int tempo_final);
-                ("stats", stats_to_json stats);
-                ("timeline_string", `String timeline_str);
-                ("processes_generated",
-                  `List (List.map (fun (id, arrival_time, burst_time, priority) ->
-                    `List [
-                      `Int id;
-                      `Int arrival_time;
-                      `Int burst_time;
-                      `Int priority
-                    ]) processos_tuplos)
-                )
-              ])
-          ]
-        in
-        print_endline (Yojson.Basic.to_string json_output)
+        if !human_ref then
+          print_human_readable algo filename tempo_final stats timeline_str processos_tuplos
+        else
+          let json_output =
+            `Assoc [
+              ("success", `Bool true);
+              ("results", `Assoc [
+                  ("algorithm", `String algo);
+                  ("file", `String filename);
+                  ("final_time", `Int tempo_final);
+                  ("stats", stats_to_json stats);
+                  ("timeline_string", `String timeline_str);
+                  ("processes_generated",
+                    `List (List.map (fun (id, arrival_time, burst_time, priority) ->
+                      `List [
+                        `Int id;
+                        `Int arrival_time;
+                        `Int burst_time;
+                        `Int priority
+                      ]) processos_tuplos)
+                  )
+                ])
+            ]
+          in
+          print_endline (Yojson.Basic.to_string json_output)
 
   with
   | Failure msg ->
