@@ -111,6 +111,8 @@ def run_simulation():
     # Decide se usa ficheiro ou geração aleatória
     if gen_num > 0:
         cmd = [OCAML_PATH, "--algo", algo, "--gen", str(gen_num)]
+        if exp_var.get():
+            cmd.append("--exp")
     else:
         if not fpath or fpath == "No file selected":
             messagebox.showerror("Erro", "Por favor, escolha um ficheiro de processos ou indique um número para gerar aleatórios.")
@@ -426,6 +428,10 @@ max_time_spinbox.grid(row=3, column=1, sticky=tk.W, padx=5, pady=2)
 ttk.Label(input_frame, text="Gerar Aleatórios:").grid(row=4, column=0, sticky=tk.W, padx=5, pady=2)
 gen_num_spinbox = ttk.Spinbox(input_frame, from_=0, to=1000, textvariable=gen_num_var, width=7)
 gen_num_spinbox.grid(row=4, column=1, sticky=tk.W, padx=5, pady=2)
+
+exp_var = tk.BooleanVar(value=False)
+exp_checkbox = ttk.Checkbutton(input_frame, text="Burst Exponencial", variable=exp_var)
+exp_checkbox.grid(row=4, column=2, sticky=tk.W, padx=5, pady=2)
 
 # --- Botão Principal ---
 run_button = ttk.Button(left_column_frame, text="Executar Simulação", command=run_simulation, state=tk.DISABLED)

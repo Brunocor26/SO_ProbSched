@@ -4,5 +4,8 @@
         "plaintext": false,
         "markdown": false,
         "scminput": false
+    },
+    "ocaml.sandbox": {
+        "kind": "global"
     }
 }
