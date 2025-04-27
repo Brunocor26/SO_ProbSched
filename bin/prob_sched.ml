@@ -9,17 +9,19 @@ let quantum_ref = ref (None : int option)
 let max_time_ref = ref (None : int option)
 let num_ref = ref None
 let human_ref = ref false  (* Indica se o output deve ser legível para humanos *)
+let exp_ref = ref false   (* indica se se deve usar burst exponencial *)
 
 (* --- Especificação dos Argumentos --- *)
 let usage_msg =
   "Usage: " ^ Sys.argv.(0) ^
-  " --algo <name> [--file <path> | --gen <num>] [--quantum <int>] [--max <int>] [--human]\n" ^
+  " --algo <name> [--file <path> | --gen <num>] [--quantum <int>] [--max <int>] [--human] [--exp]\n" ^
   "  --file <path>   : Caminho para o ficheiro CSV de processos\n" ^
   "  --gen <num>     : Gerar <num> processos aleatórios (alternativa a --file)\n" ^
   "  --algo <name>   : Algoritmo (fcfs, sjf, priority_np, priority_preemp, rr, rm, edf)\n" ^
   "  --quantum <int> : Quantum para RR\n" ^
   "  --max <int>     : Tempo máximo de simulação (obrigatório para rm/edf)\n" ^
-  "  --human         : Output legível para humanos\n"
+  "  --human         : Output legível para humanos\n" ^
+  "  --exp           : Gerar burst times com distribuição exponencial (normalmente mais curtos)\n"
 
 let speclist = [
   ("--algo", Arg.Set_string algo_ref, " Algoritmo de escalonamento (fcfs, sjf, priority_np, priority_preemp, rr, rm, edf)");
@@ -28,6 +30,7 @@ let speclist = [
   ("--quantum", Arg.Int (fun q -> quantum_ref := Some q), " Quantum para Round Robin (obrigatório se --algo rr)");
   ("--max", Arg.Int (fun m -> max_time_ref := Some m), " Tempo máximo de simulação (obrigatório para rm/edf)");
   ("--human", Arg.Set human_ref, " Output legível para humanos");
+  ("--exp", Arg.Set exp_ref, " Gerar burst times com distribuição exponencial");
 ]
 
 (* --- Função de Saída JSON --- *)
@@ -125,7 +128,12 @@ let run_and_output () =
       match !num_ref with
       | Some n ->
           if is_realtime then
-            let tuplos = Process_generator.generate_processes_rt n in
+            let tuplos =
+              if !exp_ref then
+                Process_generator.generate_processes_rt_exp n
+              else
+                Process_generator.generate_processes_rt n
+            in
             let processos =
               List.map (fun (id, arrival_time, burst_time, period) ->
                 Process.create
@@ -140,7 +148,12 @@ let run_and_output () =
             in
             (tuplos, processos)
           else
-            let tuplos = Process_generator.generate_processes n in
+            let tuplos =
+              if !exp_ref then
+                Process_generator.generate_processes_exp n
+              else
+                Process_generator.generate_processes n
+            in
             let processos =
               List.map (fun (id, arrival_time, burst_time, priority) ->
                 Process.create

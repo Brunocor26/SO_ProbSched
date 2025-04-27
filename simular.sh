@@ -9,7 +9,7 @@ for algo in $ALGOS; do
   for i in $(seq 1 $REPS); do
     # Para RR, usa quantum 2; para RM/EDF, usa max 50
     if [ "$algo" = "rr" ]; then
-      OUT=$(./_build/default/bin/prob_sched.exe --algo $algo --gen 10 --quantum 2)
+      OUT=$(./_build/default/bin/prob_sched.exe --algo $algo --gen 10 --quantum 4)
     elif [ "$algo" = "rm" ] || [ "$algo" = "edf" ]; then
       OUT=$(./_build/default/bin/prob_sched.exe --algo $algo --gen 10 --max 50)
     else
