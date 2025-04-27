@@ -124,20 +124,8 @@ let run_and_output () =
     let (processos_tuplos, processos_iniciais) =
       match !num_ref with
       | Some n ->
-          let arrival_lambda = 1.0 in
-          let burst_mu = 5.0 in
-          let burst_sigma = 2.0 in
           if is_realtime then
-            let period_mu = 8.0 in
-            let period_sigma = 3.0 in
-            let tuplos = Process_generator.generate_processes_rt
-              ~n
-              ~arrival_lambda
-              ~burst_mu
-              ~burst_sigma
-              ~period_mu
-              ~period_sigma
-            in
+            let tuplos = Process_generator.generate_processes_rt n in
             let processos =
               List.map (fun (id, arrival_time, burst_time, period) ->
                 Process.create
@@ -152,12 +140,7 @@ let run_and_output () =
             in
             (tuplos, processos)
           else
-            let tuplos = Process_generator.generate_processes
-              ~n
-              ~arrival_lambda
-              ~burst_mu
-              ~burst_sigma
-            in
+            let tuplos = Process_generator.generate_processes n in
             let processos =
               List.map (fun (id, arrival_time, burst_time, priority) ->
                 Process.create

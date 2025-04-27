@@ -8,7 +8,7 @@ let file_ref = ref ""
 let quantum_ref = ref (None : int option)
 let max_time_ref = ref (None : int option)
 let num_ref = ref None
-let human_ref = ref false  (* <-- NOVO *)
+let human_ref = ref false  (* Indica se o output deve ser legível para humanos *)
 
 (* --- Especificação dos Argumentos --- *)
 let usage_msg =
@@ -22,11 +22,11 @@ let usage_msg =
   "  --human         : Output legível para humanos\n"
 
 let speclist = [
-  ("--algo", Arg.Set_string algo_ref, " Scheduling algorithm (fcfs, sjf, priority_np, priority_preemp, rr, rm, edf)");
-  ("--file", Arg.Set_string file_ref, " Path to the process definition file (alternativa a --gen)");
+  ("--algo", Arg.Set_string algo_ref, " Algoritmo de escalonamento (fcfs, sjf, priority_np, priority_preemp, rr, rm, edf)");
+  ("--file", Arg.Set_string file_ref, " Caminho para o ficheiro de processos (alternativa a --gen)");
   ("--gen", Arg.Int (fun n -> num_ref := Some n), "Número de processos a gerar aleatoriamente (alternativa a --file)");
-  ("--quantum", Arg.Int (fun q -> quantum_ref := Some q), " Time quantum for Round Robin (required if --algo rr)");
-  ("--max", Arg.Int (fun m -> max_time_ref := Some m), " Max simulation time (required for rm/edf)");
+  ("--quantum", Arg.Int (fun q -> quantum_ref := Some q), " Quantum para Round Robin (obrigatório se --algo rr)");
+  ("--max", Arg.Int (fun m -> max_time_ref := Some m), " Tempo máximo de simulação (obrigatório para rm/edf)");
   ("--human", Arg.Set human_ref, " Output legível para humanos");
 ]
 
@@ -42,7 +42,7 @@ let stats_to_json (stats : Statistics.simulation_stats) : t =
     ("deadline_misses", `Int stats.deadline_misses);
   ]
 
-(* --- Função para Formatar Timeline --- *)
+(* --- Função para formatar a timeline da simulação --- *)
 let format_timeline_string (log : Scheduler.timeline_event list) (tempo_final : int) : string =
   if tempo_final <= 0 || log = [] then "[No simulation trace]"
   else
@@ -73,10 +73,10 @@ let format_timeline_string (log : Scheduler.timeline_event list) (tempo_final : 
       let symbol = 
         if !running_pid = -1 then "[-]"
         else 
-          (* Extract original process ID by dividing by 1000 *)
+          (* Extrai o ID original do processo dividindo por 1000, se for uma instância periódica *)
           let original_id = 
             if !running_pid >= 1000 then
-              !running_pid / 1000  (* For instance 1001 -> process 1 *)
+              !running_pid / 1000  (* Por exemplo, instância 1001 -> processo 1 *)
             else
               !running_pid
           in
@@ -86,7 +86,7 @@ let format_timeline_string (log : Scheduler.timeline_event list) (tempo_final : 
     done;
     Buffer.contents buffer
 
-(* --- Função para imprimir resultados em formato humano --- *)
+(* --- Função para imprimir resultados em formato legível para humanos --- *)
 let print_human_readable algo filename tempo_final stats timeline_str processos_tuplos =
   Printf.printf "Algoritmo: %s\n" algo;
   if filename <> "" then Printf.printf "Ficheiro: %s\n" filename;
@@ -105,9 +105,10 @@ let print_human_readable algo filename tempo_final stats timeline_str processos_
       id arrival_time burst_time priority
   ) processos_tuplos
 
-(* --- Função principal que executa e imprime JSON ou humano --- *)
+(* --- Função principal que executa a simulação e imprime o resultado em JSON ou formato humano --- *)
 let run_and_output () =
   try
+    (* Validação dos argumentos obrigatórios *)
     if !algo_ref = "" then failwith "Algorithm (--algo) is required.";
     if !num_ref = None && !file_ref = "" then failwith "É necessário --file ou --gen.";
     if !algo_ref = "rr" && !quantum_ref = None then failwith "Quantum (--quantum) is required for Round Robin (rr).";
@@ -119,30 +120,19 @@ let run_and_output () =
     let is_realtime = match algo with "rm" | "edf" -> true | _ -> false in
     if is_realtime && max_time = None then failwith "Max simulation time (--max) is required for rm/edf.";
 
+    (* Geração ou leitura dos processos *)
     let (processos_tuplos, processos_iniciais) =
       match !num_ref with
       | Some n ->
-          let arrival_lambda = 1.0 in
-          let burst_mu = 5.0 in
-          let burst_sigma = 2.0 in
           if is_realtime then
-            let period_mu = 8.0 in
-            let period_sigma = 3.0 in
-            let tuplos = Process_generator.generate_processes_rt
-              ~n
-              ~arrival_lambda
-              ~burst_mu
-              ~burst_sigma
-              ~period_mu
-              ~period_sigma
-            in
+            let tuplos = Process_generator.generate_processes_rt n in
             let processos =
               List.map (fun (id, arrival_time, burst_time, period) ->
                 Process.create
                   ~id
                   ~arrival_time
                   ~burst_time
-                  ~priority:id  (* Store original ID in priority field *)
+                  ~priority:id  (* Guarda o ID original no campo priority *)
                   ?period:(Some period)
                   ?deadline:(Some (arrival_time + period))
                   ()
@@ -150,12 +140,7 @@ let run_and_output () =
             in
             (tuplos, processos)
           else
-            let tuplos = Process_generator.generate_processes
-              ~n
-              ~arrival_lambda
-              ~burst_mu
-              ~burst_sigma
-            in
+            let tuplos = Process_generator.generate_processes n in
             let processos =
               List.map (fun (id, arrival_time, burst_time, priority) ->
                 Process.create
@@ -187,6 +172,7 @@ let run_and_output () =
 
     if processos_iniciais = [] then failwith ("No valid processes loaded from file '" ^ filename ^ "'.");
 
+    (* Execução da simulação consoante o algoritmo escolhido *)
     let simulation_result, processos_para_stats =
       try
         match algo with
@@ -211,6 +197,7 @@ let run_and_output () =
       with ex -> failwith ("Error during simulation for algorithm '" ^ algo ^ "': " ^ Printexc.to_string ex), processos_iniciais
     in
 
+    (* Impressão do resultado no formato escolhido *)
     match simulation_result with
     | None -> failwith "Simulation failed to produce results."
     | Some (tempo_final, log_eventos) ->
@@ -249,12 +236,12 @@ let run_and_output () =
       print_endline (Yojson.Basic.to_string json_error);
       exit 1
   | ex ->
-      let err_msg = "Unexpected error: " ^ Printexc.to_string ex in
+      let err_msg = "Erro inesperado: " ^ Printexc.to_string ex in
       let json_error = `Assoc [("success", `Bool false); ("error", `String err_msg)] in
       print_endline (Yojson.Basic.to_string json_error);
       exit 1
 
 (* --- Ponto de Entrada Principal --- *)
 let () =
-  Arg.parse speclist (fun anon_arg -> raise (Arg.Bad ("Unexpected argument: " ^ anon_arg))) usage_msg;
+  Arg.parse speclist (fun anon_arg -> raise (Arg.Bad ("Argumento inesperado: " ^ anon_arg))) usage_msg;
   run_and_output ()
